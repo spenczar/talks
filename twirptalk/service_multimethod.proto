@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package code.justin.tv.spencer.talks.twirptalk;
+
+option go_package = "twirptalk";
+
+// START OMIT
+// rpc/service.proto:
+service StreamTracker { // HLservice
+  rpc StartStream(Stream) returns (StreamSession); // HLservice
+  rpc EndStream(StreamSession) returns (EndStreamResponse);
+} // HLservice
+
+message Stream { // HLmessage
+  string channel_id = 1; // HLmessage
+  // formats is the list of available quality levels for the stream. // HLmessage
+  repeated string formats = 2; // HLmessage
+} // HLmessage
+
+message StreamSession {
+  string id = 1;
+  Stream stream = 2;
+}
+
+message EndStreamResponse {}
+// END OMIT

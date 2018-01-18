@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package twirp.example.twirptalk;
+
+option go_package = "twirptalk";
+
+// service-start OMIT
+// rpc/service.proto
+service StreamTracker {
+  rpc StartStream(Stream) returns (StreamSession);
+  rpc EndStream(StreamSession) returns (EndStreamResponse);
+}
+// service-end OMIT
+
+message Stream {
+  string channel_id = 1;
+  // formats is the list of available quality levels for the stream.
+  repeated string formats = 2;
+}
+
+message StreamSession {
+  string id = 1;
+  Stream stream = 2;
+}
+
+message EndStreamResponse {}
