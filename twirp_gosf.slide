@@ -68,7 +68,7 @@ Used in production today by dozens of backend services on different teams (and g
 
 You write a protobuf spec file describing your API:
 
-.code twirptalk/service.proto /START OMIT/,/END OMIT/
+.code twirptalk/service1.proto /START OMIT/,/END OMIT/
 
 * Services can have multiple methods
 
@@ -94,11 +94,11 @@ The interface lines up with the proto definition cleanly:
 
 * Generated code: Servers
 If you implement that interface, you can serve it:
-.play twirptalk/cmd/server/main.go /func main/,/^}/
+.code twirptalk/cmd/server/main.go /func main/,/^}/
 
 * Generated code: Clients
 If you know where a server is running, you can connect to it:
-.play twirptalk/cmd/client/main.go /func main/,/^}/
+.code twirptalk/cmd/client/main.go /func main/,/^}/
 
 * What just happened?
 
