@@ -1,0 +1,170 @@
+# The Go Programming Language
+
+Spencer Nelson
+2 June 2020
+swnelson@uw.edu
+
+## Goals of the talk
+
+What is Go?
+
+What is Go good at?
+
+What is Go bad at?
+
+What does Go feel like?
+
+## My background
+
+- Web development at ZeroCater, 2011-2013: Python
+
+- Data science at Twitch, 2013-2015: Python
+
+- Streaming video software at Twitch/AWS, 2015-2020: Go
+
+## What is Go
+
+A compiled, statically typed language.
+
+Imperative style, with curly braces throughout.
+
+Garbage collected, memory safe, but not at all object oriented.
+
+Concurrent execution is a first-class feature of the language.
+
+Compiled binaries are statically linked, and all binaries contain the entire Go
+runtime.
+
+## What is Go: History
+
+Rob Pike, Ken Thompson, Robert Griesemer started it in 2007 at Google
+
+Motivations:
+ - It took hours to compile a C++ program and Rob Pike got annoyed
+ - And every time it was compiled, they'd discover a new concurrency bug
+
+## What is Go: Design
+
+Go is a language for whose main goal is productivity.
+- Fast compilation
+  - Most programs (<10k lines, few dependencies): Under 1 second
+  - Kubernetes (~3M lines of code): 1m57s from a cold cache, 22.5s warm
+- Simple builds
+  - `go build k8s.io/cubernetes/kubectl` - no special config
+- Very simple language, not many features
+- Garbage collected
+- Natively multicore
+
+## What is Go: Sample code
+
+.play lsstgo/serial.go /^func pageSize/,/^\/\/ END/
+
+## What is Go: Concurrency primitives
+
+.play lsstgo/concurrent.go /^func main/,/^}/
+
+## What is Go: Concurrency primitives are usually not enough
+
+.play lsstgo/concurrent2.go /^func main/,/^}/
+
+## What is Go: Small language
+
+Most languages add features over time, but rarely remove any.
+
+You end up writing in a subset of the language.
+
+.image lsstgo/js_the_good_parts.jpg
+
+Reading someone else's code gets hard: when did they write it, and what subset did _they_ use?
+
+
+## What is Go: Small language
+
+Go has very a small set of features, and adds features very slowly.
+
+As of Go 1, the language is locked.
+
+For example:
+ - barebones error handling
+ - no generics
+ - no complex type algebra
+ - no pattern matching
+ - no list comprehensions
+
+Basically no metaprogramming.
+
+*But*: upgrading from go1.2 (2013) to go1.14 (2020) is easy, and I can read
+ anyone's Go code and understand what's going on.
+
+
+## What is Go good at: Anything that benefits from concurrency
+
+Go shines for anything that lives on a network.
+
+.image lsstgo/what_you_write.svg
+
+
+## What is Go good at: Software Engineering
+
+Big software projects with lots of collaboration are easier because code is so
+readable.
+
+Most C or Python code is terrible, but a small fraction is _beautiful_.
+
+Pretty much all Go code is acceptable.
+
+
+Tools are easy to write, too. Writing a new linter is about a day of work.
+
+Stuff is fast enough to work in that I find myself reading for Go for simple
+scripts and using `go run whatever.go`.
+
+
+## What is Go good at: It's fast enough
+
+The language doesn't have many abstractions to get in the way, unlike (for
+example) Python's objects. As a result, most of the time you're going at C
+speeds.
+
+The language also comes with a scheduler built-in that will spread work across
+all the cores you give it. Parallelizing, and coordinating that parallelism, is
+simple and efficient.
+
+The standard library takes performance very seriously. The emphasis is on
+*predictable* performance.
+
+
+## What is Go bad at
+
+There's no REPL. Nothing even nearly as good as Jupyter.
+
+Numeric routine libraries (like LAPACK or BLAS) are not very developed.
+
+Nothing nearly as developed as the Python ecosystem for astronomy*
+
+\*Sebastien Binet, @sbinet in your local LSST slack, has written
+https://github.com/astrogo/fitsio and other packages related to astronomy!
+... I'm not sure anyone uses them though.
+
+Package management is still a mess.
+
+
+## What does Go feel like?
+
+Pretty boring. But boring can be good!
+
+The designers of Go set out to make a simpler, more productive C++. I think they
+ended up making a simpler, more efficient, more boring Python.
+
+
+## What does Go feel like?
+
+.image lsstgo/language_preference.svg
+
+
+## What does Go feel like?
+
+> "Some programmers find it fun to work in; others find it unimaginative, even boring. Those are not contradictory positions.
+>
+> "Go was designed to address the problems faced in software development at Google, which led to a language that is not a breakthrough research language but is nonetheless an excellent tool for engineering large software projects."
+> >  Rob Pike, "[Go At Google: Language Design in the Service of Software Engineering](https://talks.golang.org/2012/splash.article)", 2012
