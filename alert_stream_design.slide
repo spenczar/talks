@@ -1,0 +1,159 @@
+# Rubin Alert Distribution Design
+
+Spencer Nelson
+27 Jul 2020
+swnelson@uw.edu
+
+
+## Current design
+
+The alert pipeline sends alert packets to a Kafka cluster.
+
+A select group of users (~5-15) get read access to that Kafka cluster. They are
+responsible for rebroadcasting the alerts for broader community access.
+
+Alerts are ~100KB, dominated by cutout images which hold raw science data.
+
+## Current design: alert packets
+
+Alert packets have metadata, "raw" science data, and calculated values
+
+TODO
+
+## Problems with the current design
+
+1. Distribution and notification are conflated
+2. Kafka is a poor fit
+
+## Distribution-vs-notification conflation
+
+Makes bandwidth the primary constraint for filter authors, which is really
+expensive.
+
+Raises time-to-notify for rapid alerts, since recipients must scan through all
+science data to get to next alert.
+
+Makes system hard to scale; bulk data delivery and rapid delivery must be served
+from same hardware.
+
+## Kafka is a poor fit
+
+Lots of tuning required to handle low-volume big messages.
+
+No satisfactory Python client libraries.
+
+Designed for closed ecosystems, where all software is written and run by one organization.
+
+Sophisticated leader-election behavior doesn't help us and results in complex failures.
+
+Difficult to tune, configure, and operate. In my 100 days working on ZTF broker,
+we've had about 5 days of complete, lights-out downtime, despite years of
+experience. It's hard!
+
+## Proposed alternatives
+
+1. Separate alert distribution from notification
+2. Stop using Kafka
+3. Incremental approaches
+
+## Separating alert distribution from notification
+
+We could send alert packets which are much smaller, but include a URL referring
+to a location with much more data.
+
+The "alert stream" gets much smaller:
+
+```
+{"image": "https://ls.st/alerts/2021/07/27/exposure_1/alert_1.fits", "h1": 90122.9, "h2": "..."}
+{"image": "https://ls.st/alerts/2021/07/27/exposure_1/alert_2.fits", "h1": 71259.9, "h2": "..."}
+{"image": "https://ls.st/alerts/2021/07/27/exposure_1/alert_3.fits", "h1": 12409.2, "h2": "..."}
+```
+In the extreme case, the URL could be the _entire_ alert packet - no other data at all.
+
+
+## Separating alert distribution from notification: client behavior
+
+Client behavior is to consume from the alert stream and go fetch the full blob
+of data separately.
+
+They can trivially filter out most events that they don't care about, if the
+filter information is in the headers.
+
+We can rate-limit clients' HTTP calls to fetch the actual Avro alerts to manage
+cost fairly. Community brokers are then groups with really high rate limits.
+
+Augmenting the alert stream with new information becomes easier. Just add a new
+header, and keep the reference back to the original alert data - no re-upload
+required.
+
+## Separating alert distribution from notification: latency impact is negligible
+
+This may require one extra round-trip to fetch data. This will add 200ms of
+latency typically versus using the same stream to notify and transmit data.
+
+End-to-end latency may be *lower* in practice because this permits very high
+parallelism. Consumers can fan out handling of many messages concurrently; a
+combined stream requires a bulky copy for that fanout which is harder to build
+infrastructure around.
+
+## Separation counterarguments
+
+On the other hand...
+
+Identifying the right balance of headers will take some effort.
+
+We'd have to run two systems - data and notification - instead of just one
+combo.
+
+## Kafka alternatives
+
+Kafka is hard to use so we could use HTTP the whole way.
+
+The alert "stream" could be an HTTP API endpoint. Clients request the list of
+alerts for the last N minutes, or the last N exposures. We provide a document
+with that list.
+
+Clients can "long-poll" to get the next batch of alert messages: they send an
+HTTP request, and we delay responding until an exposure has been processed and
+we can respond with a batch of alerts.
+
+**The point is,** we can do this with no difference in latency from Kafka.
+
+We can distribute data on big HTTP caches, too.
+
+This would avoid storing any server-side state about clients. We're very
+decoupled, which is good!
+
+## Kafka Counterarguments
+
+On the other hand...
+
+We have been talking up Kafka for a long time with the community. Some community
+broker authors have experience working with Kafka from ZTF.
+
+Kafka handles consumer state tracking on clients' behalf. They'd need to keep
+track of their position in the stream themselves for long-running processes.
+
+## Incremental approach
+
+We can try these ideas out without disrupting the existing plan: provide a
+"skinny form" of the alerts alongside the fat form.
+
+This could be implemented as a consumer of the Kafka topic (or the other way
+around, Kafka on top of the skinny stream).
+
+Downside would be double the hardware requirements, and development time.
+
+
+
+
+
+
+## Conclusions
+
+Putting both data and notifications about data on the same channel is clumsy and
+difficult. We might be able to provide a more useful data stream to more people
+if we separate them.
+
+Kafka is hard to get right. HTTP is easy to get right. We shouldn't make this
+harder than it has to be!
