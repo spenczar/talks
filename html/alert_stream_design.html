@@ -1,0 +1,1708 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <title>Rubin Alert Distribution Design</title>
+    <meta charset="utf-8">
+    <script>
+      var notesEnabled =  false ;
+    </script>
+    <script type="text/javascript">
+// Copyright 2012 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+var PERMANENT_URL_PREFIX = '/static/';
+
+var SLIDE_CLASSES = ['far-past', 'past', 'current', 'next', 'far-next'];
+
+var PM_TOUCH_SENSITIVITY = 15;
+
+var curSlide;
+
+/* ---------------------------------------------------------------------- */
+/* classList polyfill by Eli Grey
+ * (http://purl.eligrey.com/github/classList.js/blob/master/classList.js) */
+
+if (typeof document !== 'undefined' && !('classList' in document.createElement('a'))) {
+
+(function (view) {
+
+var
+    classListProp = 'classList'
+  , protoProp = 'prototype'
+  , elemCtrProto = (view.HTMLElement || view.Element)[protoProp]
+  , objCtr = Object
+    strTrim = String[protoProp].trim || function () {
+    return this.replace(/^\s+|\s+$/g, '');
+  }
+  , arrIndexOf = Array[protoProp].indexOf || function (item) {
+    for (var i = 0, len = this.length; i < len; i++) {
+      if (i in this && this[i] === item) {
+        return i;
+      }
+    }
+    return -1;
+  }
+  // Vendors: please allow content code to instantiate DOMExceptions
+  , DOMEx = function (type, message) {
+    this.name = type;
+    this.code = DOMException[type];
+    this.message = message;
+  }
+  , checkTokenAndGetIndex = function (classList, token) {
+    if (token === '') {
+      throw new DOMEx(
+          'SYNTAX_ERR'
+        , 'An invalid or illegal string was specified'
+      );
+    }
+    if (/\s/.test(token)) {
+      throw new DOMEx(
+          'INVALID_CHARACTER_ERR'
+        , 'String contains an invalid character'
+      );
+    }
+    return arrIndexOf.call(classList, token);
+  }
+  , ClassList = function (elem) {
+    var
+        trimmedClasses = strTrim.call(elem.className)
+      , classes = trimmedClasses ? trimmedClasses.split(/\s+/) : []
+    ;
+    for (var i = 0, len = classes.length; i < len; i++) {
+      this.push(classes[i]);
+    }
+    this._updateClassName = function () {
+      elem.className = this.toString();
+    };
+  }
+  , classListProto = ClassList[protoProp] = []
+  , classListGetter = function () {
+    return new ClassList(this);
+  }
+;
+// Most DOMException implementations don't allow calling DOMException's toString()
+// on non-DOMExceptions. Error's toString() is sufficient here.
+DOMEx[protoProp] = Error[protoProp];
+classListProto.item = function (i) {
+  return this[i] || null;
+};
+classListProto.contains = function (token) {
+  token += '';
+  return checkTokenAndGetIndex(this, token) !== -1;
+};
+classListProto.add = function (token) {
+  token += '';
+  if (checkTokenAndGetIndex(this, token) === -1) {
+    this.push(token);
+    this._updateClassName();
+  }
+};
+classListProto.remove = function (token) {
+  token += '';
+  var index = checkTokenAndGetIndex(this, token);
+  if (index !== -1) {
+    this.splice(index, 1);
+    this._updateClassName();
+  }
+};
+classListProto.toggle = function (token) {
+  token += '';
+  if (checkTokenAndGetIndex(this, token) === -1) {
+    this.add(token);
+  } else {
+    this.remove(token);
+  }
+};
+classListProto.toString = function () {
+  return this.join(' ');
+};
+
+if (objCtr.defineProperty) {
+  var classListPropDesc = {
+      get: classListGetter
+    , enumerable: true
+    , configurable: true
+  };
+  try {
+    objCtr.defineProperty(elemCtrProto, classListProp, classListPropDesc);
+  } catch (ex) { // IE 8 doesn't support enumerable:true
+    if (ex.number === -0x7FF5EC54) {
+      classListPropDesc.enumerable = false;
+      objCtr.defineProperty(elemCtrProto, classListProp, classListPropDesc);
+    }
+  }
+} else if (objCtr[protoProp].__defineGetter__) {
+  elemCtrProto.__defineGetter__(classListProp, classListGetter);
+}
+
+}(self));
+
+}
+/* ---------------------------------------------------------------------- */
+
+/* Slide movement */
+
+function hideHelpText() {
+  document.getElementById('help').style.display = 'none';
+};
+
+function getSlideEl(no) {
+  if ((no < 0) || (no >= slideEls.length)) {
+    return null;
+  } else {
+    return slideEls[no];
+  }
+};
+
+function updateSlideClass(slideNo, className) {
+  var el = getSlideEl(slideNo);
+
+  if (!el) {
+    return;
+  }
+
+  if (className) {
+    el.classList.add(className);
+  }
+
+  for (var i in SLIDE_CLASSES) {
+    if (className != SLIDE_CLASSES[i]) {
+      el.classList.remove(SLIDE_CLASSES[i]);
+    }
+  }
+};
+
+function updateSlides() {
+  if (window.trackPageview) window.trackPageview();
+
+  for (var i = 0; i < slideEls.length; i++) {
+    switch (i) {
+      case curSlide - 2:
+        updateSlideClass(i, 'far-past');
+        break;
+      case curSlide - 1:
+        updateSlideClass(i, 'past');
+        break;
+      case curSlide:
+        updateSlideClass(i, 'current');
+        break;
+      case curSlide + 1:
+        updateSlideClass(i, 'next');
+        break;
+      case curSlide + 2:
+        updateSlideClass(i, 'far-next');
+        break;
+      default:
+        updateSlideClass(i);
+        break;
+    }
+  }
+
+  triggerLeaveEvent(curSlide - 1);
+  triggerEnterEvent(curSlide);
+
+  window.setTimeout(function() {
+    // Hide after the slide
+    disableSlideFrames(curSlide - 2);
+  }, 301);
+
+  enableSlideFrames(curSlide - 1);
+  enableSlideFrames(curSlide + 2);
+
+  updateHash();
+};
+
+function prevSlide() {
+  hideHelpText();
+  if (curSlide > 0) {
+    curSlide--;
+
+    updateSlides();
+  }
+
+  if (notesEnabled) localStorage.setItem(destSlideKey(), curSlide);
+};
+
+function nextSlide() {
+  hideHelpText();
+  if (curSlide < slideEls.length - 1) {
+    curSlide++;
+
+    updateSlides();
+  }
+
+  if (notesEnabled) localStorage.setItem(destSlideKey(), curSlide);
+};
+
+/* Slide events */
+
+function triggerEnterEvent(no) {
+  var el = getSlideEl(no);
+  if (!el) {
+    return;
+  }
+
+  var onEnter = el.getAttribute('onslideenter');
+  if (onEnter) {
+    new Function(onEnter).call(el);
+  }
+
+  var evt = document.createEvent('Event');
+  evt.initEvent('slideenter', true, true);
+  evt.slideNumber = no + 1; // Make it readable
+
+  el.dispatchEvent(evt);
+};
+
+function triggerLeaveEvent(no) {
+  var el = getSlideEl(no);
+  if (!el) {
+    return;
+  }
+
+  var onLeave = el.getAttribute('onslideleave');
+  if (onLeave) {
+    new Function(onLeave).call(el);
+  }
+
+  var evt = document.createEvent('Event');
+  evt.initEvent('slideleave', true, true);
+  evt.slideNumber = no + 1; // Make it readable
+
+  el.dispatchEvent(evt);
+};
+
+/* Touch events */
+
+function handleTouchStart(event) {
+  if (event.touches.length == 1) {
+    touchDX = 0;
+    touchDY = 0;
+
+    touchStartX = event.touches[0].pageX;
+    touchStartY = event.touches[0].pageY;
+
+    document.body.addEventListener('touchmove', handleTouchMove, true);
+    document.body.addEventListener('touchend', handleTouchEnd, true);
+  }
+};
+
+function handleTouchMove(event) {
+  if (event.touches.length > 1) {
+    cancelTouch();
+  } else {
+    touchDX = event.touches[0].pageX - touchStartX;
+    touchDY = event.touches[0].pageY - touchStartY;
+    event.preventDefault();
+  }
+};
+
+function handleTouchEnd(event) {
+  var dx = Math.abs(touchDX);
+  var dy = Math.abs(touchDY);
+
+  if ((dx > PM_TOUCH_SENSITIVITY) && (dy < (dx * 2 / 3))) {
+    if (touchDX > 0) {
+      prevSlide();
+    } else {
+      nextSlide();
+    }
+  }
+
+  cancelTouch();
+};
+
+function cancelTouch() {
+  document.body.removeEventListener('touchmove', handleTouchMove, true);
+  document.body.removeEventListener('touchend', handleTouchEnd, true);
+};
+
+/* Preloading frames */
+
+function disableSlideFrames(no) {
+  var el = getSlideEl(no);
+  if (!el) {
+    return;
+  }
+
+  var frames = el.getElementsByTagName('iframe');
+  for (var i = 0, frame; frame = frames[i]; i++) {
+    disableFrame(frame);
+  }
+};
+
+function enableSlideFrames(no) {
+  var el = getSlideEl(no);
+  if (!el) {
+    return;
+  }
+
+  var frames = el.getElementsByTagName('iframe');
+  for (var i = 0, frame; frame = frames[i]; i++) {
+    enableFrame(frame);
+  }
+};
+
+function disableFrame(frame) {
+  frame.src = 'about:blank';
+};
+
+function enableFrame(frame) {
+  var src = frame._src;
+
+  if (frame.src != src && src != 'about:blank') {
+    frame.src = src;
+  }
+};
+
+function setupFrames() {
+  var frames = document.querySelectorAll('iframe');
+  for (var i = 0, frame; frame = frames[i]; i++) {
+    frame._src = frame.src;
+    disableFrame(frame);
+  }
+
+  enableSlideFrames(curSlide);
+  enableSlideFrames(curSlide + 1);
+  enableSlideFrames(curSlide + 2);
+};
+
+function setupInteraction() {
+  /* Clicking and tapping */
+
+  var el = document.createElement('div');
+  el.className = 'slide-area';
+  el.id = 'prev-slide-area';
+  el.addEventListener('click', prevSlide, false);
+  document.querySelector('section.slides').appendChild(el);
+
+  var el = document.createElement('div');
+  el.className = 'slide-area';
+  el.id = 'next-slide-area';
+  el.addEventListener('click', nextSlide, false);
+  document.querySelector('section.slides').appendChild(el);
+
+  /* Swiping */
+
+  document.body.addEventListener('touchstart', handleTouchStart, false);
+}
+
+/* Hash functions */
+
+function getCurSlideFromHash() {
+  var slideNo = parseInt(location.hash.substr(1));
+
+  if (slideNo) {
+    curSlide = slideNo - 1;
+  } else {
+    curSlide = 0;
+  }
+};
+
+function updateHash() {
+  location.replace('#' + (curSlide + 1));
+};
+
+/* Event listeners */
+
+function handleBodyKeyDown(event) {
+  // If we're in a code element, only handle pgup/down.
+  var inCode = event.target.classList.contains('code');
+
+  switch (event.keyCode) {
+    case 78: // 'N' opens presenter notes window
+      if (!inCode && notesEnabled) toggleNotesWindow();
+      break;
+    case 72: // 'H' hides the help text
+    case 27: // escape key
+      if (!inCode) hideHelpText();
+      break;
+
+    case 39: // right arrow
+    case 13: // Enter
+    case 32: // space
+      if (inCode) break;
+    case 34: // PgDn
+      nextSlide();
+      event.preventDefault();
+      break;
+
+    case 37: // left arrow
+    case 8: // Backspace
+      if (inCode) break;
+    case 33: // PgUp
+      prevSlide();
+      event.preventDefault();
+      break;
+
+    case 40: // down arrow
+      if (inCode) break;
+      nextSlide();
+      event.preventDefault();
+      break;
+
+    case 38: // up arrow
+      if (inCode) break;
+      prevSlide();
+      event.preventDefault();
+      break;
+  }
+};
+
+function scaleSmallViewports() {
+  var el = document.querySelector('section.slides');
+  var transform = '';
+  var sWidthPx = 1250;
+  var sHeightPx = 750;
+  var sAspectRatio = sWidthPx / sHeightPx;
+  var wAspectRatio = window.innerWidth / window.innerHeight;
+
+  if (wAspectRatio <= sAspectRatio && window.innerWidth < sWidthPx) {
+    transform = 'scale(' + window.innerWidth / sWidthPx + ')';
+  } else if (window.innerHeight < sHeightPx) {
+    transform = 'scale(' + window.innerHeight / sHeightPx + ')';
+  }
+  el.style.transform = transform;
+}
+
+function addEventListeners() {
+  document.addEventListener('keydown', handleBodyKeyDown, false);
+  var resizeTimeout;
+  window.addEventListener('resize', function() {
+    // throttle resize events
+    window.clearTimeout(resizeTimeout);
+    resizeTimeout = window.setTimeout(function() {
+      resizeTimeout = null;
+      scaleSmallViewports();
+    }, 50);
+  });
+
+  // Force reset transform property of section.slides when printing page.
+  // Use both onbeforeprint and matchMedia for compatibility with different browsers.
+  var beforePrint = function() {
+    var el = document.querySelector('section.slides');
+    el.style.transform = '';
+  };
+  window.onbeforeprint = beforePrint;
+  if (window.matchMedia) {
+    var mediaQueryList = window.matchMedia('print');
+    mediaQueryList.addListener(function(mql) {
+      if (mql.matches) beforePrint();
+    });
+  }
+}
+
+/* Initialization */
+
+function addFontStyle() {
+  var el = document.createElement('link');
+  el.rel = 'stylesheet';
+  el.type = 'text/css';
+  el.href = '//fonts.googleapis.com/css?family=' +
+            'Open+Sans:regular,semibold,italic,italicsemibold|Droid+Sans+Mono';
+
+  document.body.appendChild(el);
+};
+
+function addGeneralStyle() {
+  var el = document.createElement('link');
+  el.rel = 'stylesheet';
+  el.type = 'text/css';
+  el.href = PERMANENT_URL_PREFIX + 'styles.css';
+  document.body.appendChild(el);
+
+  var el = document.createElement('meta');
+  el.name = 'viewport';
+  el.content = 'width=device-width,height=device-height,initial-scale=1';
+  document.querySelector('head').appendChild(el);
+
+  var el = document.createElement('meta');
+  el.name = 'apple-mobile-web-app-capable';
+  el.content = 'yes';
+  document.querySelector('head').appendChild(el);
+
+  scaleSmallViewports();
+};
+
+function handleDomLoaded() {
+  slideEls = document.querySelectorAll('section.slides > article');
+
+  setupFrames();
+
+  addFontStyle();
+  addGeneralStyle();
+  addEventListeners();
+
+  updateSlides();
+
+  setupInteraction();
+
+  if (window.location.hostname == 'localhost' || window.location.hostname == '127.0.0.1' || window.location.hostname == '::1') {
+    hideHelpText();
+  }
+
+  document.body.classList.add('loaded');
+
+  setupNotesSync();
+};
+
+function initialize() {
+  getCurSlideFromHash();
+
+  if (window['_DEBUG']) {
+    PERMANENT_URL_PREFIX = '../';
+  }
+
+  if (window['_DCL']) {
+    handleDomLoaded();
+  } else {
+    document.addEventListener('DOMContentLoaded', handleDomLoaded, false);
+  }
+}
+
+// If ?debug exists then load the script relative instead of absolute
+if (!window['_DEBUG'] && document.location.href.indexOf('?debug') !== -1) {
+  document.addEventListener('DOMContentLoaded', function() {
+    // Avoid missing the DomContentLoaded event
+    window['_DCL'] = true
+  }, false);
+
+  window['_DEBUG'] = true;
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src = '../slides.js';
+  var s = document.getElementsByTagName('script')[0];
+  s.parentNode.insertBefore(script, s);
+
+  // Remove this script
+  s.parentNode.removeChild(s);
+} else {
+  initialize();
+}
+
+/* Synchronize windows when notes are enabled */
+
+function setupNotesSync() {
+  if (!notesEnabled) return;
+
+  function setupPlayResizeSync() {
+    var out = document.getElementsByClassName('output');
+    for (var i = 0; i < out.length; i++) {
+      $(out[i]).bind('resize', function(event) {
+        if ($(event.target).hasClass('ui-resizable')) {
+          localStorage.setItem('play-index', i);
+          localStorage.setItem('output-style', out[i].style.cssText);
+        }
+      })
+    }
+  };
+  function setupPlayCodeSync() {
+    var play = document.querySelectorAll('div.playground');
+    for (var i = 0; i < play.length; i++) {
+      play[i].addEventListener('input', inputHandler, false);
+
+      function inputHandler(e) {
+        localStorage.setItem('play-index', i);
+        localStorage.setItem('play-code', e.target.innerHTML);
+      }
+    }
+  };
+
+  setupPlayCodeSync();
+  setupPlayResizeSync();
+  localStorage.setItem(destSlideKey(), curSlide);
+  window.addEventListener('storage', updateOtherWindow, false);
+}
+
+// An update to local storage is caught only by the other window
+// The triggering window does not handle any sync actions
+function updateOtherWindow(e) {
+  // Ignore remove storage events which are not meant to update the other window
+  var isRemoveStorageEvent = !e.newValue;
+  if (isRemoveStorageEvent) return;
+
+  var destSlide = localStorage.getItem(destSlideKey());
+  while (destSlide > curSlide) {
+    nextSlide();
+  }
+  while (destSlide < curSlide) {
+    prevSlide();
+  }
+
+  updatePlay(e);
+  updateNotes();
+}
+    </script>
+
+
+<style>
+  /* latin */
+@font-face {
+  font-family: 'Droid Sans Mono';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Droid Sans Mono Regular'), local('DroidSansMono-Regular'), url(https://fonts.gstatic.com/s/droidsansmono/v13/6NUO8FuJNQ2MbkrZ5-J8lKFrp7pRef2r.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: local('Open Sans Italic'), local('OpenSans-Italic'), url(https://fonts.gstatic.com/s/opensans/v17/mem6YaGs126MiZpBA-UFUK0Udc1UAw.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: local('Open Sans Italic'), local('OpenSans-Italic'), url(https://fonts.gstatic.com/s/opensans/v17/mem6YaGs126MiZpBA-UFUK0ddc1UAw.woff2) format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: local('Open Sans Italic'), local('OpenSans-Italic'), url(https://fonts.gstatic.com/s/opensans/v17/mem6YaGs126MiZpBA-UFUK0Vdc1UAw.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: local('Open Sans Italic'), local('OpenSans-Italic'), url(https://fonts.gstatic.com/s/opensans/v17/mem6YaGs126MiZpBA-UFUK0adc1UAw.woff2) format('woff2');
+  unicode-range: U+0370-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: local('Open Sans Italic'), local('OpenSans-Italic'), url(https://fonts.gstatic.com/s/opensans/v17/mem6YaGs126MiZpBA-UFUK0Wdc1UAw.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: local('Open Sans Italic'), local('OpenSans-Italic'), url(https://fonts.gstatic.com/s/opensans/v17/mem6YaGs126MiZpBA-UFUK0Xdc1UAw.woff2) format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: local('Open Sans Italic'), local('OpenSans-Italic'), url(https://fonts.gstatic.com/s/opensans/v17/mem6YaGs126MiZpBA-UFUK0Zdc0.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 600;
+  src: local('Open Sans SemiBold Italic'), local('OpenSans-SemiBoldItalic'), url(https://fonts.gstatic.com/s/opensans/v17/memnYaGs126MiZpBA-UFUKXGUdhmIqOjjg.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 600;
+  src: local('Open Sans SemiBold Italic'), local('OpenSans-SemiBoldItalic'), url(https://fonts.gstatic.com/s/opensans/v17/memnYaGs126MiZpBA-UFUKXGUdhvIqOjjg.woff2) format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 600;
+  src: local('Open Sans SemiBold Italic'), local('OpenSans-SemiBoldItalic'), url(https://fonts.gstatic.com/s/opensans/v17/memnYaGs126MiZpBA-UFUKXGUdhnIqOjjg.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 600;
+  src: local('Open Sans SemiBold Italic'), local('OpenSans-SemiBoldItalic'), url(https://fonts.gstatic.com/s/opensans/v17/memnYaGs126MiZpBA-UFUKXGUdhoIqOjjg.woff2) format('woff2');
+  unicode-range: U+0370-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 600;
+  src: local('Open Sans SemiBold Italic'), local('OpenSans-SemiBoldItalic'), url(https://fonts.gstatic.com/s/opensans/v17/memnYaGs126MiZpBA-UFUKXGUdhkIqOjjg.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 600;
+  src: local('Open Sans SemiBold Italic'), local('OpenSans-SemiBoldItalic'), url(https://fonts.gstatic.com/s/opensans/v17/memnYaGs126MiZpBA-UFUKXGUdhlIqOjjg.woff2) format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: italic;
+  font-weight: 600;
+  src: local('Open Sans SemiBold Italic'), local('OpenSans-SemiBoldItalic'), url(https://fonts.gstatic.com/s/opensans/v17/memnYaGs126MiZpBA-UFUKXGUdhrIqM.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Open Sans Regular'), local('OpenSans-Regular'), url(https://fonts.gstatic.com/s/opensans/v17/mem8YaGs126MiZpBA-UFWJ0bbck.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Open Sans Regular'), local('OpenSans-Regular'), url(https://fonts.gstatic.com/s/opensans/v17/mem8YaGs126MiZpBA-UFUZ0bbck.woff2) format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Open Sans Regular'), local('OpenSans-Regular'), url(https://fonts.gstatic.com/s/opensans/v17/mem8YaGs126MiZpBA-UFWZ0bbck.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Open Sans Regular'), local('OpenSans-Regular'), url(https://fonts.gstatic.com/s/opensans/v17/mem8YaGs126MiZpBA-UFVp0bbck.woff2) format('woff2');
+  unicode-range: U+0370-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Open Sans Regular'), local('OpenSans-Regular'), url(https://fonts.gstatic.com/s/opensans/v17/mem8YaGs126MiZpBA-UFWp0bbck.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Open Sans Regular'), local('OpenSans-Regular'), url(https://fonts.gstatic.com/s/opensans/v17/mem8YaGs126MiZpBA-UFW50bbck.woff2) format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Open Sans Regular'), local('OpenSans-Regular'), url(https://fonts.gstatic.com/s/opensans/v17/mem8YaGs126MiZpBA-UFVZ0b.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 600;
+  src: local('Open Sans SemiBold'), local('OpenSans-SemiBold'), url(https://fonts.gstatic.com/s/opensans/v17/mem5YaGs126MiZpBA-UNirkOX-hpOqc.woff2) format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+/* cyrillic */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 600;
+  src: local('Open Sans SemiBold'), local('OpenSans-SemiBold'), url(https://fonts.gstatic.com/s/opensans/v17/mem5YaGs126MiZpBA-UNirkOVuhpOqc.woff2) format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* greek-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 600;
+  src: local('Open Sans SemiBold'), local('OpenSans-SemiBold'), url(https://fonts.gstatic.com/s/opensans/v17/mem5YaGs126MiZpBA-UNirkOXuhpOqc.woff2) format('woff2');
+  unicode-range: U+1F00-1FFF;
+}
+/* greek */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 600;
+  src: local('Open Sans SemiBold'), local('OpenSans-SemiBold'), url(https://fonts.gstatic.com/s/opensans/v17/mem5YaGs126MiZpBA-UNirkOUehpOqc.woff2) format('woff2');
+  unicode-range: U+0370-03FF;
+}
+/* vietnamese */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 600;
+  src: local('Open Sans SemiBold'), local('OpenSans-SemiBold'), url(https://fonts.gstatic.com/s/opensans/v17/mem5YaGs126MiZpBA-UNirkOXehpOqc.woff2) format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+1EA0-1EF9, U+20AB;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 600;
+  src: local('Open Sans SemiBold'), local('OpenSans-SemiBold'), url(https://fonts.gstatic.com/s/opensans/v17/mem5YaGs126MiZpBA-UNirkOXOhpOqc.woff2) format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 600;
+  src: local('Open Sans SemiBold'), local('OpenSans-SemiBold'), url(https://fonts.gstatic.com/s/opensans/v17/mem5YaGs126MiZpBA-UNirkOUuhp.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+ @media screen {
+  /* Framework */
+  html {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+
+    display: block !important;
+
+    height: 100%;
+    height: 100vh;
+
+    overflow: hidden;
+
+    background: rgb(215, 215, 215);
+    background: -o-radial-gradient(rgb(240, 240, 240), rgb(190, 190, 190));
+    background: -moz-radial-gradient(rgb(240, 240, 240), rgb(190, 190, 190));
+    background: -webkit-radial-gradient(rgb(240, 240, 240), rgb(190, 190, 190));
+    background: -webkit-gradient(radial, 50% 50%, 0, 50% 50%, 500, from(rgb(240, 240, 240)), to(rgb(190, 190, 190)));
+
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .slides {
+    width: 100%;
+    height: 100%;
+    left: 0;
+    top: 0;
+
+    position: absolute;
+
+    -webkit-transform: translate3d(0, 0, 0);
+  }
+
+  .slides > article {
+    display: block;
+
+    position: absolute;
+    overflow: hidden;
+
+    width: 900px;
+    height: 700px;
+
+    left: 50%;
+    top: 50%;
+
+    margin-left: -450px;
+    margin-top: -350px;
+
+    padding: 40px 60px;
+
+    box-sizing: border-box;
+    -o-box-sizing: border-box;
+    -moz-box-sizing: border-box;
+    -webkit-box-sizing: border-box;
+
+    border-radius: 10px;
+    -o-border-radius: 10px;
+    -moz-border-radius: 10px;
+    -webkit-border-radius: 10px;
+
+    background-color: white;
+
+    border: 1px solid rgba(0, 0, 0, .3);
+
+    transition: transform .3s ease-out;
+    -o-transition: -o-transform .3s ease-out;
+    -moz-transition: -moz-transform .3s ease-out;
+    -webkit-transition: -webkit-transform .3s ease-out;
+  }
+  .slides.layout-widescreen > article {
+    margin-left: -550px;
+    width: 1100px;
+  }
+  .slides.layout-faux-widescreen > article {
+    margin-left: -550px;
+    width: 1100px;
+
+    padding: 40px 160px;
+  }
+
+  .slides.layout-widescreen > article:not(.nobackground):not(.biglogo),
+  .slides.layout-faux-widescreen > article:not(.nobackground):not(.biglogo) {
+    background-position-x: 0, 840px;
+  }
+
+  /* Clickable/tappable areas */
+
+  .slide-area {
+    z-index: 1000;
+
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 150px;
+    height: 700px;
+
+    left: 50%;
+    top: 50%;
+
+    cursor: pointer;
+    margin-top: -350px;
+
+    tap-highlight-color: transparent;
+    -o-tap-highlight-color: transparent;
+    -moz-tap-highlight-color: transparent;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #prev-slide-area {
+    margin-left: -550px;
+  }
+  #next-slide-area {
+    margin-left: 400px;
+  }
+  .slides.layout-widescreen #prev-slide-area,
+  .slides.layout-faux-widescreen #prev-slide-area {
+    margin-left: -650px;
+  }
+  .slides.layout-widescreen #next-slide-area,
+  .slides.layout-faux-widescreen #next-slide-area {
+    margin-left: 500px;
+  }
+
+  /* Slides */
+
+  .slides > article {
+    display: none;
+  }
+  .slides > article.far-past {
+    display: block;
+    transform: translate(-2040px);
+    -o-transform: translate(-2040px);
+    -moz-transform: translate(-2040px);
+    -webkit-transform: translate3d(-2040px, 0, 0);
+  }
+  .slides > article.past {
+    display: block;
+    transform: translate(-1020px);
+    -o-transform: translate(-1020px);
+    -moz-transform: translate(-1020px);
+    -webkit-transform: translate3d(-1020px, 0, 0);
+  }
+  .slides > article.current {
+    display: block;
+    transform: translate(0);
+    -o-transform: translate(0);
+    -moz-transform: translate(0);
+    -webkit-transform: translate3d(0, 0, 0);
+  }
+  .slides > article.next {
+    display: block;
+    transform: translate(1020px);
+    -o-transform: translate(1020px);
+    -moz-transform: translate(1020px);
+    -webkit-transform: translate3d(1020px, 0, 0);
+  }
+  .slides > article.far-next {
+    display: block;
+    transform: translate(2040px);
+    -o-transform: translate(2040px);
+    -moz-transform: translate(2040px);
+    -webkit-transform: translate3d(2040px, 0, 0);
+  }
+
+  .slides.layout-widescreen > article.far-past,
+  .slides.layout-faux-widescreen > article.far-past {
+    display: block;
+    transform: translate(-2260px);
+    -o-transform: translate(-2260px);
+    -moz-transform: translate(-2260px);
+    -webkit-transform: translate3d(-2260px, 0, 0);
+  }
+  .slides.layout-widescreen > article.past,
+  .slides.layout-faux-widescreen > article.past {
+    display: block;
+    transform: translate(-1130px);
+    -o-transform: translate(-1130px);
+    -moz-transform: translate(-1130px);
+    -webkit-transform: translate3d(-1130px, 0, 0);
+  }
+  .slides.layout-widescreen > article.current,
+  .slides.layout-faux-widescreen > article.current {
+    display: block;
+    transform: translate(0);
+    -o-transform: translate(0);
+    -moz-transform: translate(0);
+    -webkit-transform: translate3d(0, 0, 0);
+  }
+  .slides.layout-widescreen > article.next,
+  .slides.layout-faux-widescreen > article.next {
+    display: block;
+    transform: translate(1130px);
+    -o-transform: translate(1130px);
+    -moz-transform: translate(1130px);
+    -webkit-transform: translate3d(1130px, 0, 0);
+  }
+  .slides.layout-widescreen > article.far-next,
+  .slides.layout-faux-widescreen > article.far-next {
+    display: block;
+    transform: translate(2260px);
+    -o-transform: translate(2260px);
+    -moz-transform: translate(2260px);
+    -webkit-transform: translate3d(2260px, 0, 0);
+  }
+}
+
+@media print {
+  /* Set page layout */
+  @page {
+    size: A4 landscape;
+  }
+
+  body {
+    display: block !important;
+  }
+
+  .slides > article {
+    display: block;
+
+    position: relative;
+
+    page-break-inside: never;
+    page-break-after: always;
+
+    overflow: hidden;
+  }
+
+  h2 {
+    position: static !important;
+    margin-top: 400px !important;
+    margin-bottom: 100px !important;
+  }
+
+  div.code {
+    background: rgb(240, 240, 240);
+  }
+
+  /* Add explicit links */
+  a:link:after, a:visited:after {
+   content: " (" attr(href) ") ";
+   font-size: 50%;
+  }
+
+  #help {
+    display: none;
+    visibility: hidden;
+  }
+}
+
+/* Styles for slides */
+
+.slides > article {
+  font-family: 'Open Sans', Arial, sans-serif;
+
+  color: black;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .1);
+
+  font-size: 26px;
+  line-height: 36px;
+
+  letter-spacing: -1px;
+}
+
+b {
+  font-weight: 600;
+}
+
+a {
+  color: rgb(0, 102, 204);
+  text-decoration: none;
+}
+a:visited {
+  color: rgba(0, 102, 204, .75);
+}
+a:hover {
+  color: black;
+}
+
+p {
+  margin: 0;
+  padding: 0;
+
+  margin-top: 20px;
+}
+p:first-child {
+  margin-top: 0;
+}
+
+h1 {
+  font-size: 60px;
+  line-height: 60px;
+
+  padding: 0;
+  margin: 0;
+  margin-top: 200px;
+  margin-bottom: 5px;
+  padding-right: 40px;
+
+  font-weight: 600;
+
+  letter-spacing: -3px;
+
+  color: rgb(51, 51, 51);
+}
+
+h2 {
+  font-size: 45px;
+  line-height: 45px;
+
+  position: absolute;
+  bottom: 150px;
+
+  padding: 0;
+  margin: 0;
+  padding-right: 40px;
+
+  font-weight: 600;
+
+  letter-spacing: -2px;
+
+  color: rgb(51, 51, 51);
+}
+
+h3 {
+  font-size: 30px;
+  line-height: 36px;
+
+  padding: 0;
+  margin: 0;
+  padding-right: 40px;
+
+  font-weight: 600;
+
+  letter-spacing: -1px;
+
+  color: rgb(51, 51, 51);
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  margin-top: 20px;
+  margin-left: 1.5em;
+}
+li {
+  padding: 0;
+  margin: 0 0 .5em 0;
+}
+
+div.code {
+  padding: 5px 10px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+  overflow: hidden;
+
+  background: rgb(240, 240, 240);
+  border: 1px solid rgb(224, 224, 224);
+}
+pre {
+  margin: 0;
+  padding: 0;
+
+  font-family: 'Droid Sans Mono', 'Courier New', monospace;
+  font-size: 18px;
+  line-height: 24px;
+  letter-spacing: -1px;
+
+  color: black;
+}
+
+pre.numbers span:before {
+  content: attr(num);
+  margin-right: 1em;
+  display: inline-block;
+}
+
+code {
+  font-size: 95%;
+  font-family: 'Droid Sans Mono', 'Courier New', monospace;
+
+  color: black;
+}
+
+article > .image,
+article > .video {
+  text-align: center;
+  margin-top: 40px;
+}
+
+article.background {
+  background-size: contain;
+  background-repeat: round;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 40px;
+}
+th {
+  font-weight: 600;
+  text-align: left;
+}
+td,
+th {
+  border: 1px solid rgb(224, 224, 224);
+  padding: 5px 10px;
+  vertical-align: top;
+}
+
+p.link {
+  margin-left: 20px;
+}
+
+.pagenumber {
+  color: #8c8c8c;
+  font-size: 75%;
+  position: absolute;
+  bottom: 0px;
+  right: 10px;
+}
+
+/* Code */
+div.code {
+  outline: 0px solid transparent;
+}
+div.playground {
+  position: relative;
+}
+div.output {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  right: 40px;
+  bottom: 40px;
+  background: #202020;
+  padding: 5px 10px;
+  z-index: 2;
+
+  border-radius: 10px;
+  -o-border-radius: 10px;
+  -moz-border-radius: 10px;
+  -webkit-border-radius: 10px;
+
+}
+div.output pre {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+div.output .stdout, div.output pre {
+  color: #e6e6e6;
+}
+div.output .stderr, div.output .error {
+  color: rgb(255, 200, 200);
+}
+div.output .system, div.output .exit {
+  color: rgb(255, 230, 120)
+}
+.buttons {
+  position: relative;
+  float: right;
+  top: -60px;
+  right: 10px;
+}
+div.output .buttons {
+  position: absolute;
+  float: none;
+  top: auto;
+  right: 5px;
+  bottom: 5px;
+}
+
+/* Presenter details */
+.presenter {
+  margin-top: 20px;
+}
+.presenter p,
+.presenter .link {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2em;
+}
+
+/* Output resize details */
+.ui-resizable-handle {
+  position: absolute;
+}
+.ui-resizable-n {
+  cursor: n-resize;
+  height: 7px;
+  width: 100%;
+  top: -5px;
+  left: 0;
+}
+.ui-resizable-w {
+  cursor: w-resize;
+  width: 7px;
+  left: -5px;
+  top: 0;
+  height: 100%;
+}
+.ui-resizable-nw {
+  cursor: nw-resize;
+  width: 9px;
+  height: 9px;
+  left: -5px;
+  top: -5px;
+}
+iframe {
+  border: none;
+}
+figcaption {
+  color: #666;
+  text-align: center;
+  font-size: 0.75em;
+}
+
+#help {
+  font-family: 'Open Sans', Arial, sans-serif;
+  text-align: center;
+  color: white;
+  background: #000;
+  opacity: 0.5;
+  position: fixed;
+  bottom: 25px;
+  left: 50px;
+  right: 50px;
+  padding: 20px;
+
+  border-radius: 10px;
+  -o-border-radius: 10px;
+  -moz-border-radius: 10px;
+  -webkit-border-radius: 10px;
+}
+</style>
+  <meta name="viewport" content="width=device-width,height=device-height,initial-scale=1"><meta name="apple-mobile-web-app-capable" content="yes"></head>
+
+  <body style="display: none" class="loaded">
+
+    <section class="slides layout-widescreen" style="transform: scale(0.989333);">
+
+      <article class="current">
+        <h1>Rubin Alert Distribution Design</h1>
+
+
+
+          <div class="presenter">
+
+
+  <p>
+    Spencer Nelson
+  </p>
+
+
+
+  <p>
+    27 Jul 2020
+  </p>
+
+
+          </div>
+
+          <div class="presenter">
+
+
+  <p>
+
+  </p>
+
+
+          </div>
+
+      </article>
+
+
+
+      <article class="next">
+
+        <h3>Short version</h3>
+        <ol>
+<li>Our alert packets are really large, and contain all the data we have in each message.</li>
+<li>This makes the alert stream hard to scale, which forces us to distribute it to a small audience.</li>
+<li>We could separate notification from data and have a better system.</li>
+</ol>
+
+
+      <span class="pagenumber">2</span>
+      </article>
+
+
+
+      <article class="far-next">
+
+        <h3>Current design</h3>
+        <p>The alert pipeline sends alert packets to a Kafka cluster.</p>
+<p>A select group of users (~5-15) get read access to that Kafka cluster. They are
+responsible for rebroadcasting the alerts for broader community access.</p>
+<p>Alert packets have metadata, "raw" science data, and calculated values.</p>
+
+
+      <span class="pagenumber">3</span>
+      </article>
+
+
+
+      <article class="">
+
+        <h3>Current design: alert packet size</h3>
+        <p>Alerts are about 100 KB, dominated by cutout images which hold raw science data.</p>
+<p>For example, here's a sample alert which is 127KB:</p>
+<pre><code>field                   | size (bytes)
+------------------------+--------------
+alertId                 |       9
+diaSource               |     546
+diaObject               |     677
+18 prvDiaSources        |   9,829
+28 prvDiaForcedSources  |   1,347
+cutoutDifference        |  57,604
+cutoutTemplate          |  57,604
+</code></pre>
+<p>So, roughly</p>
+<ul>
+<li>1% metadata and calculated measurements</li>
+<li>9% history</li>
+<li>90% cutouts</li>
+</ul>
+
+
+      <span class="pagenumber">4</span>
+      </article>
+
+
+
+      <article class="">
+
+        <h3>Current design: stream size</h3>
+        <p>We publish the stream of all alerts. Each alert packet is about 100KB, and there are about 10,000 alerts per exposure.</p>
+<p>Most alerts are published in a brief flood when processing completes, so perhaps 2,000 alerts per second over 5 seconds.</p>
+<p>This means we need about 1.6Gbps outbound bandwidth per recipient.</p>
+
+
+      <span class="pagenumber">5</span>
+      </article>
+
+
+
+      <article class="">
+
+        <h3>Problem with the current design</h3>
+        <p>Distribution and notification are conflated.</p>
+<p>Letting everyone know that there's something worth checking out is different
+from sending everyone data.</p>
+<p>The conflation of the two makes bandwidth the primary constraint for filter
+authors, which is really expensive.</p>
+<p>Raises time-to-notify for rapid alerts, since recipients must scan through all
+science data to get to next alert.</p>
+<p>Makes system hard to scale or optimize; bulk data delivery and rapid delivery
+must be served from same hardware.</p>
+
+
+      <span class="pagenumber">6</span>
+      </article>
+
+
+
+      <article class="">
+
+        <h3>Separating alert distribution from notification</h3>
+        <p>We could send alert packets which are much smaller, but include a URL referring
+to a location with much more data.</p>
+<p>The "alert stream" gets much smaller:</p>
+<pre><code>{"image": "https://ls.st/alerts/2021/07/27/exposure_1/alert_1.fits", "h1": 90122.9, "h2": "..."}
+{"image": "https://ls.st/alerts/2021/07/27/exposure_1/alert_2.fits", "h1": 71259.9, "h2": "..."}
+{"image": "https://ls.st/alerts/2021/07/27/exposure_1/alert_3.fits", "h1": 12409.2, "h2": "..."}
+</code></pre>
+<p>Eric Bellm has concocted a plausible minimal payload. It's just 100 bytes per
+alert!</p>
+
+
+      <span class="pagenumber">7</span>
+      </article>
+
+
+
+      <article class="">
+
+        <h3>Client behavior</h3>
+        <p>Client behavior is to consume from the alert stream and go fetch the full blob
+of data separately <em>if they actually care</em>.</p>
+<p>They can trivially filter out most events that they don't care about.</p>
+<p>We can rate-limit clients' HTTP calls to fetch more data to manage cost fairly.
+Community brokers (if they exist) are then groups with really high rate limits.</p>
+<p>Augmenting the alert stream with new information becomes easier. Just add a new
+header, and keep the reference back to the original alert data - no re-upload
+required.</p>
+
+
+      <span class="pagenumber">8</span>
+      </article>
+
+
+
+      <article class="">
+
+        <h3>We might be able to make the stream public</h3>
+        <p>If each alert is just 200 bytes (100 bytes of data + 100 bytes of URLs), then
+the peak outbound bandwidth of notifications is probably about 3Mbps per
+recipient of the stream. That's small! We could handle thousands of recipients
+with a single 10Gbps NIC.</p>
+<p>We'd need to rate limit access to the other 99,800 bytes of data. This can be
+tuned to our actual bandwidth requirements.</p>
+<p>Permitting 270 requests/sec lets a user keep up with all 10k alerts/exposure
+(albeit with up to ~35s latency). This is equivalent to about 220 Mbps.</p>
+<p>We could easily support 100 recipients with a 25Gbps bandwidth limit:</p>
+<ul>
+<li>100 * 3 Mbps = 0.3Gbps for notifications</li>
+<li>100 * 220 Mbps = 22Gbps for data</li>
+</ul>
+
+
+      <span class="pagenumber">9</span>
+      </article>
+
+
+
+      <article class="">
+
+        <h3>Latency impact is negligible if consumers are picky</h3>
+        <p>This may require one extra round-trip to fetch data. This will add 200ms of
+latency typically versus using the same stream to notify and transmit data.</p>
+<p>End-to-end latency may be <em>lower</em> in practice because this permits very high
+parallelism. Consumers can fan out handling of many messages concurrently; a
+combined stream requires a bulky copy for that fanout which is harder to build
+infrastructure around.</p>
+
+
+      <span class="pagenumber">10</span>
+      </article>
+
+
+
+      <article class="">
+
+        <h3>On the other hand...</h3>
+        <p>Rate limits might frustrate users.</p>
+<p>Identifying the right balance of headers will take some effort.</p>
+<p>We'd have to run two systems - data and notification - instead of just one
+combo.</p>
+<p>Referential integrity could be hard to maintain. Perfect synchronization of the
+data and notification systems is probably impossible.</p>
+
+
+      <span class="pagenumber">11</span>
+      </article>
+
+
+
+      <article>
+
+        <h3>Incremental approach</h3>
+        <p>We can try these ideas out without disrupting the existing plan: provide a
+"skinny form" of the alerts alongside the fat form.</p>
+<p>This could be implemented as a consumer of the Kafka topic (or the other way
+around, Kafka on top of the skinny stream).</p>
+<p>Approximately double the hardware requirements, and extra development effort to
+build and operate the service two ways.</p>
+
+
+      <span class="pagenumber">12</span>
+      </article>
+
+
+
+      <article>
+
+        <h3>Conclusions</h3>
+        <p>Putting both data and notifications about data on the same channel is clumsy and
+difficult. We might be able to provide a more useful data stream to more people
+if we separate them.</p>
+
+
+      <span class="pagenumber">13</span>
+      </article>
+
+
+
+      <article>
+        <h3>Thank you</h3>
+
+          <div class="presenter">
+
+
+  <p>
+    Spencer Nelson
+  </p>
+
+
+
+  <p>
+    27 Jul 2020
+  </p>
+
+<p class="link"><a href="mailto:swnelson@uw.edu" target="_blank">swnelson@uw.edu</a></p>
+          </div>
+
+          <div class="presenter">
+
+
+  <p>
+
+  </p>
+
+
+          </div>
+
+      </article>
+
+    <div class="slide-area" id="prev-slide-area"></div><div class="slide-area" id="next-slide-area"></div></section>
+
+    <div id="help" style="display: none;">
+      Use the left and right arrow keys or click the left and right
+      edges of the page to navigate between slides.<br>
+      (Press 'H' or navigate to hide this message.)
+    </div>
+
+
+    <link rel="stylesheet" type="text/css" href="Rubin%20Alert%20Distribution%20Design_files/css.css">
+    <link rel="stylesheet" type="text/css" href="Rubin%20Alert%20Distribution%20Design_files/styles.css"></body></html>
