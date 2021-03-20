@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<!-- saved from url=(0040)http://127.0.0.1:3999/twirp_gosf.slide#1 -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Twirp</title>
+    
+    <script>
+      var notesEnabled =  false ;
+    </script>
+    <script src="./Twirp_files/slides.js"></script>
+
+    
+
+    <script>
+      
+      if (window["location"] && window["location"]["hostname"] == "talks.golang.org") {
+        var _gaq = _gaq || [];
+        _gaq.push(["_setAccount", "UA-11222381-6"]);
+        _gaq.push(["b._setAccount", "UA-49880327-6"]);
+        window.trackPageview = function() {
+          _gaq.push(["_trackPageview", location.pathname+location.hash]);
+          _gaq.push(["b._trackPageview", location.pathname+location.hash]);
+        };
+        window.trackPageview();
+        window.trackEvent = function(category, action, opt_label, opt_value, opt_noninteraction) {
+          _gaq.push(["_trackEvent", category, action, opt_label, opt_value, opt_noninteraction]);
+          _gaq.push(["b._trackEvent", category, action, opt_label, opt_value, opt_noninteraction]);
+        };
+      }
+    </script>
+  <meta name="viewport" content="width=device-width,height=device-height,initial-scale=1"><meta name="apple-mobile-web-app-capable" content="yes"></head>
+
+  <body style="display: none" class="loaded">
+
+    <section class="slides layout-widescreen">
+
+      <article class="current">
+        <h1>Twirp</h1>
+        <h3>A really simple RPC framework</h3>
+        <h3>17 January 2018</h3>
+        
+          <div class="presenter">
+            
+  
+  <p>
+    Spencer Nelson
+  </p>
+  
+
+          </div>
+        
+      </article>
+
+  
+  
+      <article class="next">
+      
+        <h2>HTTP API Design</h2>
+      
+      <span class="pagenumber">2</span>
+      </article>
+  
+  
+  
+      <article class="far-next">
+      
+        <h3>StreamTracker</h3>
+        
+  
+  <p>
+    StreamTracker is a service that tracks the state of live streams on Twitch.
+  </p>
+  
+
+  
+  <p>
+    Streams can start, and can then end.
+  </p>
+  
+
+  
+  <p>
+    A stream is associated with a <b>broadcaster</b>.
+  </p>
+  
+
+      
+      <span class="pagenumber">3</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Good ol' HTTP</h3>
+        
+  
+  <p>
+    Let's give it a shot:
+  </p>
+  
+
+  
+  <p>
+    <b>Start</b> a stream:
+  </p>
+  
+
+  
+  <div class="code"><pre>PUT /streams &lt;broadcaster ID&gt;</pre></div>
+  
+
+  
+  <p>
+    <b>End</b> a stream:
+  </p>
+  
+
+  
+  <div class="code"><pre>DELETE /streams/:id</pre></div>
+  
+
+      
+      <span class="pagenumber">4</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>But wait</h3>
+        
+  
+  <p>
+    <b>Start</b> a stream:
+  </p>
+  
+
+  
+  <div class="code"><pre>PUT /streams &lt;broadcaster ID&gt;</pre></div>
+  
+
+  <ul>
+  
+    <li>Should it be PUT?</li>
+  
+    <li>Should it be POST?</li>
+  
+    <li>Should it be /stream?</li>
+  
+    <li>Should it be /stream/:id?</li>
+  
+  </ul>
+
+      
+      <span class="pagenumber">5</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h2>The right answer</h2>
+      
+      <span class="pagenumber">6</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>The right answer</h3>
+        
+  
+  <p>
+    Stop thinking in HTTP.
+  </p>
+  
+
+  
+  <p>
+    Start thinking in <b>functions</b>
+  </p>
+  
+
+      
+      <span class="pagenumber">7</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Structured RPCs</h3>
+        
+  <ul>
+  
+    <li>Write a spec describing your API.</li>
+  
+    <li>Generate a client and server from the specification.</li>
+  
+    <li>Just call functions.</li>
+  
+  </ul>
+
+      
+      <span class="pagenumber">8</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Meet Twirp!</h3>
+        
+<div class="image">
+  <img src="./Twirp_files/logo.png">
+</div>
+
+  
+  <p>
+    Twirp is an RPC framework for Twitch with a goal of simplicity:
+  </p>
+  
+
+  <ul>
+  
+    <li>Clarity in development over flexibility</li>
+  
+    <li>Simplicity over performance</li>
+  
+    <li>No weird dependency tangles</li>
+  
+  </ul>
+
+  
+  <p>
+    Used in production today by dozens of backend services on different teams (and growing fast).
+  </p>
+  
+
+      
+      <span class="pagenumber">9</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>What it does</h3>
+        
+  
+  <p>
+    You write a protobuf spec file describing your API:
+  </p>
+  
+
+  <div class="code">
+<pre><span num="8">// rpc/service.proto:</span>
+<span num="9">service StreamTracker {</span>
+<span num="10">  rpc StartStream(Stream) returns (StreamSession);</span>
+<span num="11">}</span>
+<span num="12"></span>
+<span num="13">message Stream {</span>
+<span num="14">  string channel_id = 1;</span>
+<span num="15">  // formats is the list of available quality levels for the stream.</span>
+<span num="16">  repeated string formats = 2;</span>
+<span num="17">}</span>
+<span num="18"></span>
+<span num="19">message StreamSession {</span>
+<span num="20">  string id = 1;</span>
+<span num="21">  Stream stream = 2;</span>
+<span num="22">}</span>
+</pre>
+</div>
+
+      
+      <span class="pagenumber">10</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Services can have multiple methods</h3>
+        
+  <div class="code" contenteditable="true" spellcheck="false">
+<pre contenteditable="true" spellcheck="false"><span num="8">// rpc/service.proto:</span>
+<span num="9">service StreamTracker {</span>
+<span num="10">  rpc StartStream(Stream) returns (StreamSession);</span>
+<span num="11">  rpc EndStream(StreamSession) returns (EndStreamResponse);</span>
+<span num="12">}</span>
+<span num="13"></span>
+<span num="14">message Stream {</span>
+<span num="15">  string channel_id = 1;</span>
+<span num="16">  // formats is the list of available quality levels for the stream.</span>
+<span num="17">  repeated string formats = 2;</span>
+<span num="18">}</span>
+<span num="19"></span>
+<span num="20">message StreamSession {</span>
+<span num="21">  string id = 1;</span>
+<span num="22">  Stream stream = 2;</span>
+<span num="23">}</span>
+<span num="24"></span>
+<span num="25">message EndStreamResponse {}</span>
+</pre>
+</div>
+
+      
+      <span class="pagenumber">11</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Generating code from a proto file</h3>
+        
+  
+  <p>
+    You generate code using <code>protoc-gen-twirp</code>, which is a protoc plugin:
+  </p>
+  
+
+  
+  <div class="code"><pre>go get github.com/twitchtv/twirp/protoc-gen-twirp
+protoc --go_out=. --twirp_out=. rpc/service.proto</pre></div>
+  
+
+  
+  <p>
+    This produces a file, <code>rpc/service.twirp.go</code>, which has everything you need:
+  </p>
+  
+
+  <ul>
+  
+    <li>a <b>interface</b> describing the service</li>
+  
+    <li>a function to make a <b>server</b></li>
+  
+    <li>a function to make a <b>client</b></li>
+  
+  </ul>
+
+      
+      <span class="pagenumber">12</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Generated code: Interface</h3>
+        
+  
+  <p>
+    The interface lines up with the proto definition cleanly:
+  </p>
+  
+
+  <div class="code">
+<pre><span num="8">// rpc/service.proto</span>
+<span num="9">service StreamTracker {</span>
+<span num="10">  rpc StartStream(Stream) returns (StreamSession);</span>
+<span num="11">  rpc EndStream(StreamSession) returns (EndStreamResponse);</span>
+<span num="12">}</span>
+</pre>
+</div>
+
+  <div class="code">
+<pre><span num="36">// rpc/service.proto</span>
+<span num="37">type StreamTracker interface {</span>
+<span num="38">    StartStream(context.Context, *Stream) (*StreamSession, error)</span>
+<span num="39">    EndStream(context.Context, *StreamSession) (*EndStreamResponse, error)</span>
+<span num="40">}</span>
+</pre>
+</div>
+
+      
+      <span class="pagenumber">13</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Generated code: Servers</h3>
+        
+  
+  <p>
+    If you implement that interface, you can serve it:
+  </p>
+  
+
+  <div class="code">
+<pre><span num="31">func main() {</span>
+<span num="32">    s := twirptalk.NewStreamTrackerServer(&amp;streamLogger{}, nil)</span>
+<span num="33">    log.Println("launching on port 12345")</span>
+<span num="34">    if err := http.ListenAndServe(":12345", s); err != nil {</span>
+<span num="35">        log.Fatalf("unable to run: %s", err)</span>
+<span num="36">    }</span>
+<span num="37">}</span>
+</pre>
+</div>
+
+      
+      <span class="pagenumber">14</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Generated code: Clients</h3>
+        
+  
+  <p>
+    If you know where a server is running, you can connect to it:
+  </p>
+  
+
+  <div class="code">
+<pre><span num="17">func main() {</span>
+<span num="18">    c := twirptalk.NewStreamTrackerProtobufClient("http://127.0.0.1:12345", http.DefaultClient)</span>
+<span num="19"></span>
+<span num="20">    everySecond(func(idx int) {</span>
+<span num="21">        resp, err := c.StartStream(context.Background(), &amp;twirptalk.Stream{</span>
+<span num="22">            ChannelId: fmt.Sprintf("%d", idx),</span>
+<span num="23">            Formats:   []string{"high", "medium", "low", "mobile", "source"},</span>
+<span num="24">        })</span>
+<span num="25">        if err != nil {</span>
+<span num="26">            log.Fatalf("err: %s", err)</span>
+<span num="27">        }</span>
+<span num="28">        log.Printf("stream %d started, session id=%s", idx, resp.Id)</span>
+<span num="29">    })</span>
+<span num="30">}</span>
+</pre>
+</div>
+
+      
+      <span class="pagenumber">15</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>What just happened?</h3>
+        
+  
+  <p>
+    We wrote a protobuf specification file.
+  </p>
+  
+
+  
+  <p>
+    We generated Go code from that spec, using <code>protoc-gen-twirp</code>.
+  </p>
+  
+
+  
+  <p>
+    The generated code handled serialization and routing for us.
+  </p>
+  
+
+  
+  <p>
+    There's no chance to get parameters or types wrong: users of your API just import the client, which "just works."
+  </p>
+  
+
+      
+      <span class="pagenumber">16</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Compare this to REST</h3>
+        
+  
+  <p>
+    In a <b>REST</b> API:
+  </p>
+  
+
+  <ul>
+  
+    <li>What HTTP method do I use?</li>
+  
+    <li>What's the URL scheme?</li>
+  
+    <li>Which parameters go in URL path segments, and which go in the body of the request?</li>
+  
+    <li>What error codes do I use?</li>
+  
+    <li>What headers do I use?</li>
+  
+    <li>How do I serialize requests?</li>
+  
+  </ul>
+
+  
+  <p>
+    In <b>Twirp</b>:
+  </p>
+  
+
+  <ul>
+  
+    <li>What methods do I serve?</li>
+  
+    <li>What are the types for requests and responses?</li>
+  
+  </ul>
+
+      
+      <span class="pagenumber">17</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h2>Let's talk about gRPC</h2>
+      
+      <span class="pagenumber">18</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Our problems with gRPC</h3>
+        
+  <ul>
+  
+    <li>http/2 can be a dealbreaker</li>
+  
+    <li>Big runtime requires lockstep upgrades across the org</li>
+  
+    <li>Big runtime has bugs</li>
+  
+    <li>Inconvenience of protobuf-only</li>
+  
+  </ul>
+
+      
+      <span class="pagenumber">19</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>gRPC: http/2 only</h3>
+        
+  <ul>
+  
+    <li>Load balancers might only work on HTTP 1.1 (like AWS ELBs)</li>
+  
+    <li>Varnish only supports http/2 experimentally in bleeding-edge release</li>
+  
+    <li>Only upside is full-duplex streaming RPCs, which are rare</li>
+  
+  </ul>
+
+  
+  <p>
+    This blocks adoption if a team already has infrastructure they know how to use.
+  </p>
+  
+
+      
+      <span class="pagenumber">20</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Twirp: http/2 optional</h3>
+        
+  
+  <p>
+    Twirp <b>can</b> run on http/2, or HTTP 1.1. It just uses <code>net/http</code>, so you don't really think about it.
+  </p>
+  
+
+      
+      <span class="pagenumber">21</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>gRPC: big runtime makes upgrades hard</h3>
+        
+  
+  <p>
+    Generated code is thin and links to a big runtime, which must be API compatible.
+  </p>
+  
+
+  
+  <p>
+    What if I generate code today, then the runtime changes, then you generate tomorrow and use my generated client? (Answer: 💥).
+  </p>
+  
+
+  
+  <p>
+    Everyone in the dependency graph <b>must</b> use the same version the code generator <b>and</b> the same version of the runtime.
+  </p>
+  
+
+  
+  <p>
+    In practice, we never upgraded.
+  </p>
+  
+
+      
+      <span class="pagenumber">22</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Twirp: minimal runtime</h3>
+        
+  
+  <p>
+    Twirp puts nearly everything into the generated code.
+  </p>
+  
+
+  
+  <p>
+    Generated servers have legacy logic included to support old generations of clients.
+  </p>
+  
+
+  
+  <p>
+    In practice, upgrading is simple: just regenerate.
+  </p>
+  
+
+      
+      <span class="pagenumber">23</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>gRPC: big runtime has bugs</h3>
+        
+  
+  <p>
+    gRPC has a full http/2 implementation, with its own flow control, separate from stdlib.
+  </p>
+  
+
+  
+  <p>
+    That turns out to be really hard to do right.
+  </p>
+  
+
+  
+  <p>
+    Some <b>fixed</b> bugs:
+  </p>
+  
+
+  <ul>
+  
+    <li>Race conditions during connection setup.</li>
+  
+    <li>If a client cancels a request, its later requests can be throttled down to about 15 bytes/sec.</li>
+  
+    <li>Servers can panic if a client disconnects at the wrong moment.</li>
+  
+  </ul>
+
+      
+      <span class="pagenumber">24</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Twirp: so simple that bugs have been very rare</h3>
+        
+  
+  <p>
+    Twirp just uses the standard library's net/http package, which is very, very, very sturdy.
+  </p>
+  
+
+  
+  <p>
+    We haven't had any Twirp bugs that have caused production issues so far.
+  </p>
+  
+
+      
+      <span class="pagenumber">25</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>gRPC: Protobuf only</h3>
+        
+  
+  <p>
+    Difficult to hand-craft a protobuf request on the command line when debugging quickly.
+  </p>
+  
+
+  
+  <p>
+    Not feasible to write clients in other languages.
+  </p>
+  
+
+      
+      <span class="pagenumber">26</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h3>Twirp: Allows JSON</h3>
+        
+  
+  <p>
+    Makes it possible to write a valid request in cURL:
+  </p>
+  
+
+  
+  <div class="code"><pre>curl --header 'Content-Type:application/json' \
+     --data '{"channel_id": 98210, "formats": ["high", "medium", "low"]}' \
+     localhost:12345/twirp/examples.twirptalk.StreamTracker/StartStream
+
+# Output:
+{"id":"498081","stream":{"channel_id":"98210","formats":["high","medium","low"]}}</pre></div>
+  
+
+  
+  <p>
+    Cross-language support has been easy, which is very important for adoption.
+  </p>
+  
+
+      
+      <span class="pagenumber">27</span>
+      </article>
+  
+  
+  
+      <article>
+      
+        <h2>Simplicity is a feature</h2>
+      
+      <span class="pagenumber">28</span>
+      </article>
+  
+  
+
+      <article>
+        <h3>Thank you</h3>
+        
+          <div class="presenter">
+            
+  
+  <p>
+    Spencer Nelson
+  </p>
+  
+<p class="link"><a href="mailto:spencer@twitch.tv" target="_blank">spencer@twitch.tv</a></p>
+          </div>
+        
+      </article>
+
+    <div class="slide-area" id="prev-slide-area"></div><div class="slide-area" id="next-slide-area"></div></section>
+
+    <div id="help" style="display: none;">
+      Use the left and right arrow keys or click the left and right
+      edges of the page to navigate between slides.<br>
+      (Press 'H' or navigate to hide this message.)
+    </div>
+
+    
+    <script src="./Twirp_files/play.js"></script>
+    
+
+    <script>
+      (function() {
+        
+        if (window["location"] && window["location"]["hostname"] == "talks.golang.org") {
+          var ga = document.createElement("script"); ga.type = "text/javascript"; ga.async = true;
+          ga.src = ("https:" == document.location.protocol ? "https://ssl" : "http://www") + ".google-analytics.com/ga.js";
+          var s = document.getElementsByTagName("script")[0]; s.parentNode.insertBefore(ga, s);
+        }
+      })();
+    </script>
+  
+
+<link rel="stylesheet" type="text/css" href="./Twirp_files/css"><link rel="stylesheet" type="text/css" href="./Twirp_files/styles.css"></body></html>
